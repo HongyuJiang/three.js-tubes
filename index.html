@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <title>three.js webgl - geometry - spline extrusion</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+    <style>
+        body {
+            font-family: Monospace;
+            background-color: #f0f0f0;
+            margin: 0px;
+            overflow: hidden;
+        }
+		
+		#slider_bar{
+			
+			background: #fff;
+			border-left: 3px solid #ccc;
+			width:15.5%;
+			height:100%;
+			position:absolute;
+			right:0px;
+			top:0px;
+		}
+		
+		#stat_window{
+			
+			right:200px;
+			position:absolute;
+		}
+		
+		#gui-container{
+			
+			top:100px;
+		}
+		
+		.block_title{
+			
+			font-family: "microsoft yahei";
+			font-size: 15px;
+			padding: 10px;
+			border-left: 3px solid #C9302C;
+			display: block;
+			
+		}
+	
+    </style>
+	
+</head>
+
+<body>
+	
+	<nav class="navbar navbar-default" role="navigation" style="margin-bottom:0px">
+		<div class="container-fluid">
+		<div class="navbar-header">
+			<a class="navbar-brand" href="#">地下空间管道浏览器</a>
+		</div>
+		
+		</div>
+	</nav>
+
+	<div id="main">
+		<div id="stat_window"></div>
+		<div id="container"></div>
+		<div id="slider_bar">
+			
+			<span class="block_title">操作空间</span>
+			<div id="gui-container"></div>
+		</div>
+	</div>
+    
+   
+    <script src="js/libs/three.js"></script>
+    <script src="js/libs/objLoader1.js"></script>
+    <script src="js/controls/OrbitControls.js"></script>
+
+    <!-- where curves formulas are defined -->
+
+    <script src="js/CurveExtras.js"></script>
+
+    <script src="js/libs/stats.min.js"></script>
+    <script src="js/libs/dat.gui.min.js"></script>
+	<script src="js/libs/jquery.js"></script>
+	<script src="js/libs/bootstrap.min.js"></script>
+	<script src="js/libs/d3.v5.min.js"></script>
+	
+	<link href="css/dat.gui.light.css" rel="stylesheet" type="text/css">
+	<link href="css/bootstrap.min.css" rel="stylesheet" type="text/css">
+
+    <script>
+		
+		var container, stats;
+		
+		var camera, scene, renderer, splineCamera, cameraHelper, cameraEye;
+		
+		var raycaster = new THREE.Raycaster();
+		var mouse = new THREE.Vector2();
+		
+		var binormal = new THREE.Vector3();
+		var normal = new THREE.Vector3();
+		
+		 // Keep a dictionary of Curve instances
+		var splines = {
+		    PipeSpline: {},
+		};
+		
+		var parent, tubeGeometry, mesh;
+		
+		var params = {
+		    spline: 'PipeSpline',
+		    scale: 3,
+		    extrusionSegments: 100,
+		    radiusSegments: 10,
+		    closed: false,
+		    animationView: false,
+		    lookAhead: false,
+		    cameraHelper: false,
+			pickedTube: '123',
+			tubeLength: '10',
+			tubeType: '1',
+		};
+		
+		var material = new THREE.MeshLambertMaterial({
+		    color: 0x666666
+		});
+		
+		var wireframeMaterial = new THREE.MeshBasicMaterial({
+		    color: 0xcccccc,
+		    opacity: 0.3,
+		    wireframe: true,
+		    transparent: true
+		});
+		
+		var projection = d3.geoMercator()
+				.center([116.389168, 39.992958]) // set centre to further North
+			    .scale(10000000) // scale to fit group width
+			    .translate([0,-200]) // ensure centred in group
+				
+		d3.csv('data/PipeLine3D.csv')
+		  .then(function(data) {
+			  
+			  var lines = []
+			  
+			  var joint_sphere = []
+			  
+			  data.forEach(function(meta){
+				  
+				  var points = []
+				  
+				  meta.line = meta.line.replace('LINESTRING Z (','')
+				  meta.line = meta.line.replace(')','')
+				  
+				  meta.points = meta.line.split(', ')
+				  
+				  meta.points.forEach(function(point){
+					  
+					  x = parseFloat(point.split(' ')[0]) 
+					  y = parseFloat(point.split(' ')[1]) 
+					  
+					  var pos = projection([x,y])
+					  
+					  var vec = new THREE.Vector3(pos[0], -10,  pos[1])
+					  
+					  points.push(vec)
+					  
+					  joint_sphere.push(vec)
+				  })
+				  
+				  lines.push(points)
+			  })
+			  
+			  pipeSplines = []
+			  
+			  for (var i = 0; i < lines.length; i++){
+				  
+				  var pipeSpline = new THREE.CatmullRomCurve3(lines[i]);
+				  
+				  pipeSplines.push(pipeSpline)
+			  }
+			  
+			  splines.PipeSpline = pipeSplines
+			  
+			  var loader = new THREE.TextureLoader();
+			  
+			  var objloader = new THREE.OBJLoader(); 
+			  
+			  init();
+			  
+			  loader.load( "./textures/plane-texture.jpg" , function(texture){
+			  
+			      objloader.load('./textures/house.obj', function ( object ) {
+			  
+			  		for (var i=0;i<5;i++){
+			  			
+			  			var cubeGeom = new THREE.BoxGeometry(50, 50, 50);
+			  			
+			  			var cube = new THREE.Mesh(cubeGeom, new THREE.MeshBasicMaterial({
+			  			  color: "grey",
+			  			  wireframe: false
+			  			}));
+			  			
+			  			cube.position.set(100 + Math.random() * 200, 20, 100 + Math.random() * 200);
+			  			cube.scale.set(0.5,0.5,0.5);
+			  			cube.castShadow   = true
+			  			scene.add(cube)
+			  	
+			  		}
+			  		
+			  		object.children.forEach(function(mesh){
+			  			
+			  			mesh.castShadow = true
+			  		})
+			  
+			        object.position.set(0, 20, 0);
+			  
+			        object.scale.set(0.5,0.5,0.5);
+			  		
+			  		scene.add( object );
+			  
+			          addPlane(texture)
+			    
+			          animate();
+			  
+			      });
+			  })
+			  
+			  
+			  function init() {
+			  
+			      container = document.getElementById('container');
+			  
+			      // camera
+			  
+			      camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.01, 10000);
+			      camera.position.set(300, 300, 1000);
+			  
+			      // scene
+			  
+			      scene = new THREE.Scene();
+			      scene.background = new THREE.Color(0xf0f0f0);
+			  
+			      // light
+			  
+			      
+			  	  var spotLight = new THREE.SpotLight(0xffffff)
+			  	  spotLight.position.set(300, 300, 300)
+			  	
+			  	  spotLight.castShadow = true
+			  
+			  	  spotLight.shadow.mapSize.width = 1024
+			  	  spotLight.shadow.mapSize.height = 1024
+			  
+			  	  scene.add(spotLight)
+			      // tube
+			  
+			      parent = new THREE.Object3D();
+			      scene.add(parent);
+			  
+			      splineCamera = new THREE.PerspectiveCamera(84, window.innerWidth / window.innerHeight, 0.01, 1000);
+			      parent.add(splineCamera);
+			  
+			      cameraHelper = new THREE.CameraHelper(splineCamera);
+			      scene.add(cameraHelper);
+			  
+			      addTube();
+			  
+			      // debug camera
+			  
+			      cameraEye = new THREE.Mesh(new THREE.SphereBufferGeometry(5), new THREE.MeshBasicMaterial({
+			          color: 0xdddddd
+			      }));
+			      parent.add(cameraEye);
+			  
+			      cameraHelper.visible = params.cameraHelper;
+			      cameraEye.visible = params.cameraHelper;
+			  
+			      // renderer
+			  
+			      renderer = new THREE.WebGLRenderer({
+			          antialias: true
+			      });
+				  
+			  	renderer.shadowMap.enabled = true
+			    renderer.setPixelRatio(window.devicePixelRatio);
+			    renderer.setSize(window.innerWidth - 200, window.innerHeight);
+			    container.appendChild(renderer.domElement);
+			  
+			      // dat.GUI
+			  	var gui = new dat.GUI({ autoPlace: false, width: 300 });
+			        
+			  	var customContainer = document.getElementById('gui-container');
+			  	customContainer.appendChild(gui.domElement);
+			  
+			      var folderGeometry = gui.addFolder('几何信息设置');
+			      folderGeometry.add(params, 'spline', Object.keys(splines)).onChange(function() {
+			  
+			          addTube();
+			  
+			      });
+			      folderGeometry.add(params, 'scale', 2, 10).step(2).onChange(function() {
+			  
+			          setScale();
+			  
+			      });
+			      folderGeometry.add(params, 'extrusionSegments', 50, 500).step(50).onChange(function() {
+			  
+			          addTube();
+			  
+			      });
+			      folderGeometry.add(params, 'radiusSegments', 2, 12).step(1).onChange(function() {
+			  
+			          addTube();
+			  
+			      });
+			      folderGeometry.add(params, 'closed').onChange(function() {
+			  
+			          addTube();
+			  
+			      });
+			      folderGeometry.open();
+			  
+			      var folderCamera = gui.addFolder('摄像机设置');
+			      folderCamera.add(params, 'animationView').onChange(function() {
+			  
+			          animateCamera();
+			  
+			      });
+			      folderCamera.add(params, 'lookAhead').onChange(function() {
+			  
+			          animateCamera();
+			  
+			      });
+			      folderCamera.add(params, 'cameraHelper').onChange(function() {
+			  
+			          animateCamera();
+			  
+			
+			      });
+			      folderCamera.open();
+				  
+				  var folderTube = gui.addFolder('管道信息');
+				  
+				  folderTube.add(params, 'pickedTube').onChange(function() {
+				  					  			  
+				  });
+				  
+				  folderTube.add(params, 'tubeLength').onChange(function() {
+				  			  	  			  
+				  });
+				  
+				  folderTube.add(params, 'tubeType').onChange(function() {
+				  
+				  });
+				  
+				  folderTube.open()
+			  
+			      var controls = new THREE.OrbitControls(camera, renderer.domElement);
+			  
+			      window.addEventListener('resize', onWindowResize, false);
+			  
+			  }
+		  })
+		  .catch(function(error){
+			 // handle error   
+		  })
+		  
+		  function onMouseDown( event ) {
+		
+			mouse.x = ( event.clientX / window.innerWidth ) * 2 - 1;
+			mouse.y = - ( event.clientY / window.innerHeight ) * 2 + 1;
+			
+			// update the picking ray with the camera and mouse position
+			raycaster.setFromCamera( mouse, camera );
+			
+			// calculate objects intersecting the picking ray
+			var intersects = raycaster.intersectObjects( scene.children, true  );
+			
+			if (intersects.length) {
+				// pick the first object. It's the closest one
+				this.pickedObject = intersects[0].object;
+				// save its color
+				this.pickedObjectSavedColor = this.pickedObject.material.emissive.getHex();
+				// set its emissive color to flashing red/yellow
+				this.pickedObject.material.emissive.setHex((8) % 2 > 1 ? 0xFFFF00 : 0xFF0000);
+			}
+			
+		}
+		
+		
+		function onMouseUp( event ){
+			
+			for (var i=0;i<scene.children.length;i++){
+				
+				//console.log(scene.children[i])
+				
+				if(scene.children[i].material != undefined && scene.children[i].material.emissive != undefined){
+					
+					scene.children[i].material.emissive.setHex(0x000000);
+				}
+				
+			}
+			
+			console.log(scene.children)
+		}
+		
+		window.addEventListener( 'mousedown', onMouseDown, false );
+		
+		window.addEventListener( 'mouseup', onMouseUp, false );
+		
+		function addTube() {
+		
+		    if (mesh !== undefined) {
+		
+		        parent.remove(mesh);
+		        mesh.geometry.dispose();
+		
+		    }
+		
+		    var extrudePaths = splines[params.spline];
+			
+			for (var i = 0;i < extrudePaths.length;i++){
+				
+				path = extrudePaths[i]
+				
+				tubeGeometry = new THREE.TubeBufferGeometry(path, params.extrusionSegments, 2, params.radiusSegments, params.closed);
+						
+				addGeometry(tubeGeometry);
+						
+			}
+		
+		   
+		    //setScale();
+		
+		}
+		
+		function addPlane(texture){
+		
+		
+		        texture.wrapS = THREE.RepeatWrapping; 
+		        texture.wrapT = THREE.RepeatWrapping;
+		
+		        texture.repeat.set( 8, 8 ); 
+		
+		        var geo = new THREE.PlaneGeometry(800, 800);
+		        //var mat = new THREE.MeshBasicMaterial({ color:'white',map:texture, transparent: false });
+				var mat = new THREE.MeshLambertMaterial({ transparent: true });
+		        var plane = new THREE.Mesh(geo, mat);
+		
+		        mat.opacity = 0.6;
+		
+		        plane.material.side = THREE.DoubleSide;
+				
+				plane.receiveShadow  = true;
+		
+		        plane.rotateX( - Math.PI / 2);
+		
+		        scene.add(plane);
+		
+		   
+		}
+		
+		function setScale() {
+		
+		    mesh.scale.set(params.scale, params.scale, params.scale);
+		
+		}
+		
+		
+		function addGeometry(geometry) {
+		
+		
+		    mesh = new THREE.Mesh(geometry, material);
+			
+		    //var wireframe = new THREE.Mesh(geometry, wireframeMaterial);
+		    //mesh.add(wireframe);
+		    mesh.translateY(-150);
+		
+		    scene.add(mesh);
+		
+		}
+		
+		function animateCamera() {
+		
+		    cameraHelper.visible = params.cameraHelper;
+		    cameraEye.visible = params.cameraHelper;
+		
+		}
+       
+
+        function onWindowResize() {
+
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+
+        }
+
+        //
+
+        function animate() {
+
+            requestAnimationFrame(animate);
+            render();
+        }
+
+        function render() {
+
+            var time = Date.now();
+            var looptime = 20 * 1000;
+            var t = (time % looptime) / looptime;
+
+            var pos = tubeGeometry.parameters.path.getPointAt(t);
+            pos.multiplyScalar(params.scale);
+
+            var segments = tubeGeometry.tangents.length;
+            var pickt = t * segments;
+            var pick = Math.floor(pickt);
+            var pickNext = (pick + 1) % segments;
+
+            binormal.subVectors(tubeGeometry.binormals[pickNext], tubeGeometry.binormals[pick]);
+            binormal.multiplyScalar(pickt - pick).add(tubeGeometry.binormals[pick]);
+
+            var dir = tubeGeometry.parameters.path.getTangentAt(t);
+            var offset = 15;
+
+            normal.copy(binormal).cross(dir);
+
+            pos.add(normal.clone().multiplyScalar(offset));
+
+            splineCamera.position.copy(pos);
+            cameraEye.position.copy(pos);
+
+            var lookAt = tubeGeometry.parameters.path.getPointAt((t + 30 / tubeGeometry.parameters.path.getLength()) % 1).multiplyScalar(params.scale);
+
+            if (!params.lookAhead) lookAt.copy(pos).add(dir);
+            splineCamera.matrix.lookAt(splineCamera.position, lookAt, normal);
+            splineCamera.rotation.setFromRotationMatrix(splineCamera.matrix, splineCamera.rotation.order);
+
+            cameraHelper.update();
+			
+            renderer.render(scene, params.animationView === true ? splineCamera : camera);
+
+        }
+    </script>
+</body>
+
+</html>
